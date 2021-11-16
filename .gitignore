@@ -1,0 +1,4 @@
+./log
+./speech_commands/*
+./speech_commands_v0.01.tar.gz
+./.ipynb_checkpoints/*
