@@ -1,0 +1,57 @@
+from config import TaskConfig
+import torch
+import torch.nn as nn
+
+
+class Attention(nn.Module):
+
+    def __init__(self, hidden_size: int, inner_size: int = None):
+        super().__init__()
+        if inner_size is None:
+            inner_size = hidden_size
+        self.energy = nn.Sequential(
+            nn.Linear(hidden_size, inner_size),
+            nn.Tanh(),
+            nn.Linear(inner_size, 1)
+        )
+    def forward(self, input):
+        return self.energy(input) 
+
+class CRNN(nn.Module):
+
+    def __init__(self, config: TaskConfig):
+        super().__init__()
+        self.config = config
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels=1, out_channels=config.cnn_out_channels,
+                kernel_size=config.kernel_size, stride=config.stride
+            ),
+            nn.Flatten(start_dim=1, end_dim=2),
+        )
+
+        self.conv_out_frequency = (config.n_mels - config.kernel_size[0]) // \
+            config.stride[0] + 1
+        
+        self.gru = nn.GRU(
+            input_size=self.conv_out_frequency * config.cnn_out_channels,
+            hidden_size=config.hidden_size,
+            num_layers=config.gru_num_layers,
+            dropout=0.1,
+            bidirectional=config.bidirectional,
+            batch_first=True
+        )
+
+        self.attention = Attention(config.hidden_size)
+        self.classifier = nn.Linear(config.hidden_size, config.num_classes)
+    
+    def forward(self, input):
+        input = input.unsqueeze(dim=1)
+        conv_output = self.conv(input).transpose(-1, -2)
+        gru_output, _ = self.gru(conv_output)
+        energy = self.attention(gru_output)
+        alpha = torch.softmax(energy, dim=-2)
+        contex_vector = (gru_output * alpha).sum(dim=-2)
+        output = self.classifier(contex_vector)
+        return output
